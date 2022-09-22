@@ -279,6 +279,9 @@ class GrowingDeNovoMolecule(DeNovoMolecule):
         for k in self.atoms:
             if self.atoms[k].valence: self.bondables.append(k)
     
+    def getFocus(self,priority=None):
+        if priority is None: return np.random.choice(self.bondables)
+        else: return priority if self.atoms[priority].valence else np.random.choice(self.bondables)
     def addAtom(self,atomname,toatoms): #toatom is the index
         if type(toatoms)!=list: toatoms=[toatoms]
         nat=self.ff.getNewAtom(atomname)
@@ -301,7 +304,7 @@ class GrowingDeNovoMolecule(DeNovoMolecule):
         if self.featmat is not None:
             self.featmat=np.concatenate((self.featmat,feat[np.newaxis,:]))
         if self.atoms[mykey].valence: self.bondables.append(mykey)
-        return True
+        return self.getFocus(priority=mykey)
         
         
     def addBond(self,id1,id2,keylist=None):
@@ -323,8 +326,9 @@ class GrowingDeNovoMolecule(DeNovoMolecule):
     
     
 class GenericAtomFeaturizer(metaclass=abc.ABCMeta):
-    def __init__(self):
+    def __init__(self,feat_dim=None):
         self.feat_type="atom"
+        self.feat_dim=feat_dim
     
     @abc.abstractmethod
     def featurize(self,node,neighs,*args): pass
@@ -333,7 +337,7 @@ class GenericAtomFeaturizer(metaclass=abc.ABCMeta):
     
 class FFOneHotFeaturizer(GenericAtomFeaturizer):
     def __init__(self,ff):
-        super(FFOneHotFeaturizer,self).__init__()
+        super(FFOneHotFeaturizer,self).__init__(len(ff.atom_list))
         self.ff=ff
         self.atomnames=tuple(self.ff.atom_list.keys())
         self.sz=len(self.atomnames)
