@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[2]:
 
 
 GLOBAL_LOADED_DENOVOREAD=True
 
 
-# In[ ]:
+# In[3]:
 
 
 import numpy as np
@@ -280,8 +280,8 @@ class GrowingDeNovoMolecule(DeNovoMolecule):
             if self.atoms[k].valence: self.bondables.append(k)
     
     def getFocus(self,priority=None):
-        if priority is None: return np.random.choice(self.bondables)
-        else: return priority if self.atoms[priority].valence else np.random.choice(self.bondables)
+        if priority is not None and self.atoms[priority].valence: return priority
+        return np.random.choice(self.bondables) if len(self.bondables) else None
     def addAtom(self,atomname,toatoms): #toatom is the index
         if type(toatoms)!=list: toatoms=[toatoms]
         nat=self.ff.getNewAtom(atomname)

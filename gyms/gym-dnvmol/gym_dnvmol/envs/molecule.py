@@ -41,25 +41,30 @@ class DeNovoMolEnv(gym.Env):
     def __init__(self):
         pass
 
-    def init(self,ff,node_feat,feat_dim=None,molsize=MAX_SIZE,seeds=None,step_rew=0.25,crash_rew=-0.25,term_rew=constantScore):
+    def init(self,ff,node_feat,feat_dim=None,molsize=MAX_SIZE,minsize=10,seeds=None,step_rew=0.25,crash_rew=-0.25,term_rew=constantScore,term_prob=None):
         #Seed molecule is a GrowingDeNovoMolecule object. seeds are the list of allowed seed atom-type names (WITH repetitions ALLOWED)
         #term_rew is a function that scores the final DeNovoMolecule Object with a score
         if seeds is None: seeds=list(ff.atom_list.keys())
         if feat_dim is None: feat_dim = node_feat.feat_dim
         self.ff=ff
         self.maxsize=molsize
+        self.sizes=np.array(list(range(minsize,self.maxsize+1)),dtype=np.int32)
         self.seedatoms=np.array(seeds,dtype=str)
         self.enc=node_feat
         self.feat_dim=feat_dim
         self.counter = 0
         self.focal=None
         self.mol=None
+        self.force_term=term_prob
+        if self.force_term is not None:
+            self.force_term=np.array([self.force_term(s) for s in range(minsize,self.maxsize+1)])
+            self.force_term/=np.sum(self.force_term)
+        self.targsize=-1
         
         #Rewards
         self.step_rew=step_rew
         self.err_rew = crash_rew
         self.goal_rew = term_rew
-        
         self.reset()
         #Will add based on what is needed
     
@@ -76,6 +81,7 @@ class DeNovoMolEnv(gym.Env):
         self.focal = list(self.mol.atoms.keys())[-1]
         ob = self.get_observation()
         self.counter = 0
+        if self.force_term is not None: self.targsize=np.random.choice(self.sizes,p=self.force_term)
         return ob
     
     def get_observation(self):
@@ -98,7 +104,7 @@ class DeNovoMolEnv(gym.Env):
             pass #TODO: Fix for returning CRASHREWARD
         else:
             rew = self.step_rew #Successful Step
-            done = (total_nodes+1 >= self.maxsize) or (succ is None)
+            done = (total_nodes+1 >= self.targsize) or (succ is None)
             if not done: self.focal = succ
             else: rew+=self.goal_rew(self.mol) # Terminal Reward Computation
 

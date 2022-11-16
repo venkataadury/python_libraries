@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 GLOBAL_LOADED_DENOVOGRAPHS=True
 
 
-# In[ ]:
+# In[2]:
 
 
 from CADD.DeNovoReader import *
@@ -17,7 +17,7 @@ from python.TorchNetworks import * #Handles all the torch imports (mostly)
 DEVICE=torch.device("cuda")
 
 
-# In[ ]:
+# In[3]:
 
 
 class GraphConvFeaturizer(nn.Module,GenericAtomFeaturizer):
@@ -41,7 +41,7 @@ class GraphConvFeaturizer(nn.Module,GenericAtomFeaturizer):
         edges[:len(nodes),:len(nodes)]=torch.tensor(mol.getAdjacencyMatrix(),dtype=torch.float32,device=DEVICE)
         nodes=torch.cat([nodes,torch.zeros((self.maxsize-len(nodes),nodes.shape[-1]),device=DEVICE,dtype=torch.float32)])
         return nodes,edges
-    def featurize(self,mols,neighs=None,*args):
+    def getFeaturesMultiple(self,mols):
         nodes=[]
         edges=[]
         for mol in mols:
@@ -50,12 +50,15 @@ class GraphConvFeaturizer(nn.Module,GenericAtomFeaturizer):
             edges.append(ed)
         nodes=torch.stack(nodes)
         edges=torch.stack(edges)
+        return nodes,edges
+    def featurize(self,mols,neighs=None,*args):
+        nodes,edges = self.getFeaturesMultiple(mols)
         return self.forward(nodes,edges)
     
     def forward(self,nodes,edges): return self.conv(nodes,edges),edges
 
 
-# In[ ]:
+# In[4]:
 
 
 constantScore=lambda x: 1.
@@ -101,7 +104,7 @@ class RNNMolGenerationEnvironment(GenericDiscreteEnvironmentExtension,metaclass=
         return self.isTerminalState()
 
 
-# In[ ]:
+# In[5]:
 
 
 '''
@@ -144,7 +147,7 @@ class GraphMolGenerationEnvironment(GenericDiscreteEnvironmentExtension,metaclas
     
 
 
-# In[ ]:
+# In[6]:
 
 
 myff=DeNovoForceFieldLoader("/home/venkata/dnv/data/final_ff_parameters.ffin")
@@ -164,6 +167,19 @@ mymol=GrowingDeNovoMolecule(72,hotenc,feat_dim=166,ff=myff) #,"/home/venkata/CAD
 print(mymol.addAtom("CA",[]),mymol.addAtom("CA",1))
 mymol.adj
 #nodes,edges=myfeat.featurize([mymol],None)
+
+
+# In[19]:
+
+
+nex,eex = myfeat.getFeaturesMultiple([mymol])
+conv_ts = torch.jit.trace_module(myfeat.cpu(),{"forward": [nex.cpu(),eex.cpu()]})
+
+
+# In[20]:
+
+
+conv_ts.save("/home/venkata/python/torchscript_saves/convfeat.ts")
 
 
 # In[ ]:
