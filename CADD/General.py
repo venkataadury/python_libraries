@@ -12,20 +12,28 @@ from rdkit import Chem
 
 
 class SequentialSMILESLoader:
-    def __init__(self,smifilename,skip_failures=True,attach_names=False,count_max=True,default_batch=1):
+    def __init__(self,smifilename,skip_failures=True,attach_names=False,count_max=True,default_batch=1,max_mols=-1):
         self.filename=smifilename
-        self.file=open(smifilename,"r")
+        if type(smifilename)==str:
+            self.file=open(smifilename,"r")
+        else:
+            self.file=None
         self.counter=0
         self.autoskip=skip_failures
         self.name=attach_names
         self.ended=False
         if count_max:
-            self.linecount=len(self.file.readlines())
-            self.file=open(smifilename,"r")
+            if self.file:
+                self.linecount=len(self.file.readlines())
+                self.file=open(smifilename,"r")
+            else:
+                self.linecount=len(smifilename) #Assuming input is a list of molecules
         else: self.linecount= None
         self.default_batch=default_batch
+        self.mollim=max_mols
+        self.skipcount=0
     
-    def getFilename(self): return self.filename
+    def getFilename(self): return (self.filename if type(self.filename)==str else None)
     def restartSequence(self,keep_location=False):
         ret=SequentialSMILESLoader(self.filename,self.autoskip,self.name,self.linecount is None,self.default_batch)
         if keep_location: ret.skipNext(self.counter)
@@ -33,11 +41,17 @@ class SequentialSMILESLoader:
     
     def skipNext(self,num=0):
         K=0
-        for ln in self.file:
-            self.counter+=1
-            K+=1
-            if K>=num: break
-        else: self.ended=True
+        if self.file is not None:
+            for ln in self.file:
+                self.counter+=1
+                K+=1
+                self.skipcount+=1
+                if K>=num: break
+            else: self.ended=True
+        else:
+            self.counter+=num
+            self.skipcount+=num
+            if self.counter>=len(self.filename): self.ended=True
             
     def getNext(self,num=0,as_smiles=False):
         if num==0: num=self.default_batch
@@ -50,6 +64,22 @@ class SequentialSMILESLoader:
         
         if self.ended: return None
         
+        if self.file is None:
+            retn=[]
+            while len(retn)<num or num<0:
+                self.counter+=1
+                if self.counter>=len(self.filename) or (self.mollim>0 and self.counter>=self.mollim):
+                    self.ended=True
+                    break
+                curmol=self.filename[self.counter]
+                if type(curmol)==str and (not as_smiles):
+                    try:
+                        curmol=Chem.MolFromSmiles(curmol)
+                    except:
+                        continue
+                retn.append(curmol)
+            return retn
+            
         for ln in self.file:
             ln=ln.strip().split()
             if not len(ln):
@@ -70,16 +100,18 @@ class SequentialSMILESLoader:
             if self.name: names.append(myname)
             
             self.counter+=1
-            if self.counter-K-skip-empty==num: break
+            if (self.counter-K-skip-empty==num) or (self.mollim>0 and self.counter-self.skipcount>=self.mollim): break
         else: self.ended=True
         
         if self.name: return ret,names
         else: return ret
     
     def drain(self,as_smiles=False): return self.getNext(-1,as_smiles)
-    def __del__(self): self.file.close()
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
     
-    def __help__(self): print("This is help")
+    def __help__(self): print("This is help. The sequential smiles loader can (ideally) work with both SMILES files and lists of molecules/smiles strings")
 
 
 # In[3]:
