@@ -9,7 +9,7 @@ DATA_SERVER="data.bridges2.psc.edu"
 GET_PATH="/jet/home/vadury/r1128/thermomaps/example4"
 # --- User-specific details (End) --- #
 
-ssh -t $USERNAME@$SERVER "cd $GET_PATH/data; zip -rT ship.zip iter*/mount/xtc rosetta"
+ssh -t $USERNAME@$SERVER "cd $GET_PATH/data; zip -rT ship.zip iter*/mount/xtc rosetta iter*/multitraj.h5"
 scp $USERNAME@$DATA_SERVER:$GET_PATH/data/ship.zip .
 unzip ship.zip
 if test $? -eq 0
