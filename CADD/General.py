@@ -198,6 +198,153 @@ def getSimilarityDistribution(smilesloader,goal=max,post=None,default=0,fingerpr
     if post is not None: ret=[post(v) for v in ret]
     return np.array(ret)
 
+def largest_dissimilar_subset(simmat_,cutoff=0.7,tries=25000,skip=None,silent=False):
+    simmat=simmat_+np.eye(len(simmat_))
+    final_sel=[]
+    for t in range(tries):
+        sel=[]
+        allowed=np.ones(len(simmat)).astype(bool)
+        if skip is not None: allowed[skip]=False
+        idx_list=np.arange(len(simmat))
+        while np.any(allowed):
+            ch=np.random.choice(idx_list[allowed])
+            sel.append(ch)
+            #close_idx=np.where()[0]
+            allowed[simmat[ch]>=cutoff]=False
+        if not silent and (t%250==0): print("Try",t,"picked",len(sel),"ligands")
+        if len(sel)>len(final_sel):
+            final_sel=sel
+    return final_sel
+
+
+# In[18]:
+
+
+class Mol2FileLoaded:
+    def __init__(self,file,include_comments=True,comment_char='#'):
+        if type(file)==str:
+            if "\n" in file: file=file.split("\n")
+            else: file=list(open(file,"r").readlines())
+        elif type(file)==list or type(file)==tuple: pass
+        else:
+            try: file=list(file.readlines())
+            except: print("Assuming input is iterable")
+
+        self.sections=dict()
+        self.header_comments=[]
+        self.comment_char=comment_char
+        self.record_comments=include_comments # All comments move to header
+        
+        self.load_lines(file)
+
+    def load_lines(self,file):
+        sec=None
+        for l in file:
+            l=l.strip()
+            if len(l)<3: continue
+            if l[0]==self.comment_char:
+                if self.record_comments: self.header_comments.append(l)
+                continue
+            
+            if l.startswith("@<TRIPOS>"):
+                l=l.replace("@<TRIPOS>","").strip()
+                sec=l
+                self.sections[sec]=[]
+                continue
+            if sec is None: raise ValueError("Non-comment lines before and @<TRIPOS> entries!")
+            self.sections[sec].append(l)
+
+    def reconstructMol2Block(self):
+        ret=""
+        for l in self.header_comments: ret+=l+"\n"
+        for s in self.sections:
+            ret+="@<TRIPOS>"+s+"\n"
+            for l in self.sections[s]: ret+=l+"\n"
+        return ret
+
+    def computeNetCharge(self):
+        q=0
+        for l in self.sections["ATOM"]:
+            l=l.strip().split(" ")[-1]
+            q+=float(l)
+        return q
+
+    def extractName(self): return self.sections["MOLECULE"][0].strip()
+
+
+# In[51]:
+
+
+class SequentialMol2Loader:
+    def __init__(self,filename,attach_names=False,default_batch=1,max_mols=-1,comment_char='#'):
+        self.filename=filename
+        if type(filename)==str: self.file=open(filename,"r")
+        else:
+            raise ValueError("Input to SequentialMol2Loader should be a mol2 filename")
+        self.counter=0
+        self.name=attach_names
+        self.ended=False
+        self.default_batch=default_batch
+        self.mollim=max_mols
+        self.skipcount=0
+        self.comment_char=comment_char
+        self.new_header=self.skimTop()
+
+    def getFilename(self): return self.filename
+    def restartSequence(self,keep_location=False):
+        ret=SequentialMol2Loader(self.filename,self.name,self.default_batch)
+        if keep_location: ret.skipNext(self.counter)
+        return ret
+
+    def skimTop(self):
+        ret=[]
+        for l in self.file:
+            l=l.strip()
+            if len(l)<3: continue
+            if l[0]==self.comment_char:
+                ret.append(l)
+                continue
+            break
+        return ret
+    def readNextBlock(self):
+        self.header=self.new_header
+        self.new_header=[]
+        lines=[]
+        for l in self.file:
+            l=l.strip()
+            if len(l)<3: continue
+            if l[0]==self.comment_char:
+                if len(lines): self.new_header.append(l)
+                else: self.header.append(l)
+                continue
+            if "@<TRIPOS>MOLECULE" in l:
+                break
+            else: lines.append(l)
+        else: self.ended=True
+        final_lines=self.header+["@<TRIPOS>MOLECULE"]+lines
+        self.counter+=1
+        return final_lines
+
+    def skipNext(self,num):
+        for _ in range(num): _ = self.readNextBlock()
+    def getNext(self,num=0,as_text=False):
+        if num==0: num=self.default_batch
+        ret=[]
+        if self.name: names=[]
+        if self.ended: return None
+        
+        for i in range(num):
+            m2b=self.readNextBlock()
+            if not as_text: m2b=Mol2FileLoaded(m2b,comment_char=self.comment_char)
+            if self.name:
+                if as_text: molname=m2b[m2b.find("@<TRIPOS>MOLECULE")+1].strip()
+                else: molname=m2b.extractName()
+            ret.append(m2b)
+            if self.name: names.append(molname)
+            if self.mollim>0 and self.counter>=mollim: self.ended=True
+        if self.name: return ret,names
+        else: return ret
+
 
 # In[9]:
 
