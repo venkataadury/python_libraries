@@ -198,6 +198,44 @@ def getSimilarityDistribution(smilesloader,goal=max,post=None,default=0,fingerpr
     if post is not None: ret=[post(v) for v in ret]
     return np.array(ret)
 
+def getSimilarityMatrix(smilesloader,default=np.nan,fingerprint=Chem.RDKFingerprint,similarity=Chem.DataStructs.TanimotoSimilarity,precompute_fps=False,batch_mols=0,num_mols=None,force_diagonal=None):
+    fullsmiload=copy.deepcopy(smilesloader)
+    if num_mols is None:
+        if fullsmiload.linecount is None: raise ValueError("Can't have no line counting in the SMILES loader for full matrix. If you want to use this approach, pass no. of molecules as num_mols=... togetSimilarityMatrix")
+        else: num_mols=int(smilesloader.linecount)
+    if precompute_fps:
+        fps=[fingerprint(s) for s in fullsmiload.drain(as_smiles=False)]
+        num_mols=len(fps)
+        simmat=np.ones((num_mols,num_mols),dtype=float)*default
+        for fpi,fp in enumerate(fps):
+            simvec=Chem.DataStructs.BulkTanimotoSimilarity(fp,fps)
+            assert (simvec[fpi]>=0.999), "Internal error occurred in getSimilarityMatrix. Self-fingerprint of ligand "+str(fpi)+" is not 1"
+            if force_diagonal is not None: simvec[fpi]=force_diagonal
+            simmat[fpi]=simvec
+    else:
+        simmat=np.ones((num_mols,num_mols),dtype=float)*default
+        print("WARN: Full similarity matrix without precompute_fps will be slow")
+        mainloader=smilesloader.restartSequence(keep_location=True)
+        
+        thismols=mainloader.getNext(batch_mols,as_smiles=False)
+        mainindex=0
+        while thismols is not None:
+            #print(mainindex,"of",num_mols)
+            mainfps=[fingerprint(m) for m in thismols]
+            subloader=smilesloader.restartSequence(keep_location=True)
+            submols=subloader.getNext(batch_mols,as_smiles=False)
+            index=0
+            while submols is not None:
+                subfps=[fingerprint(s) for s in submols]
+                for fpi,fp in enumerate(mainfps):
+                    simvec=Chem.DataStructs.BulkTanimotoSimilarity(fp,subfps)
+                    simmat[mainindex+fpi,index:index+len(subfps)]=simvec
+                index+=len(submols)
+                submols=subloader.getNext(batch_mols,as_smiles=False)
+            mainindex+=len(mainfps)
+            thismols=mainloader.getNext(batch_mols,as_smiles=False)
+    return simmat
+
 def largest_dissimilar_subset(simmat_,cutoff=0.7,tries=25000,skip=None,silent=False):
     simmat=simmat_+np.eye(len(simmat_))
     final_sel=[]
