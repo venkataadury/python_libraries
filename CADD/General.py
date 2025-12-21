@@ -66,6 +66,7 @@ class SequentialSMILESLoader:
         
         if self.file is None:
             retn=[]
+            retm=[]
             while len(retn)<num or num<0:
                 self.counter+=1
                 if self.counter>=len(self.filename) or (self.mollim>0 and self.counter>=self.mollim):
@@ -77,8 +78,10 @@ class SequentialSMILESLoader:
                         curmol=Chem.MolFromSmiles(curmol)
                     except:
                         continue
+                if self.name: retm.append(self.name[self.counter])
                 retn.append(curmol)
-            return retn
+            if self.name: return retn,retm
+            else: return retn
             
         for ln in self.file:
             ln=ln.strip().split()
@@ -204,7 +207,9 @@ def getSimilarityMatrix(smilesloader,default=np.nan,fingerprint=Chem.RDKFingerpr
         if fullsmiload.linecount is None: raise ValueError("Can't have no line counting in the SMILES loader for full matrix. If you want to use this approach, pass no. of molecules as num_mols=... togetSimilarityMatrix")
         else: num_mols=int(smilesloader.linecount)
     if precompute_fps:
-        fps=[fingerprint(s) for s in fullsmiload.drain(as_smiles=False)]
+        mols=fullsmiload.drain(as_smiles=False) if not fullsmiload.name else fullsmiload.drain(as_smiles=False)[0]
+        fps=[Chem.RDKFingerprint(m) for m in mols]
+        del mols
         num_mols=len(fps)
         simmat=np.ones((num_mols,num_mols),dtype=float)*default
         for fpi,fp in enumerate(fps):
@@ -236,7 +241,7 @@ def getSimilarityMatrix(smilesloader,default=np.nan,fingerprint=Chem.RDKFingerpr
             thismols=mainloader.getNext(batch_mols,as_smiles=False)
     return simmat
 
-def largest_dissimilar_subset(simmat_,cutoff=0.7,tries=25000,skip=None,silent=False):
+def largest_dissimilar_subset(simmat_,cutoff=0.7,tries=25000,skip=None,silent=False,print_freq=250):
     simmat=simmat_+np.eye(len(simmat_))
     final_sel=[]
     for t in range(tries):
@@ -249,7 +254,7 @@ def largest_dissimilar_subset(simmat_,cutoff=0.7,tries=25000,skip=None,silent=Fa
             sel.append(ch)
             #close_idx=np.where()[0]
             allowed[simmat[ch]>=cutoff]=False
-        if not silent and (t%250==0): print("Try",t,"picked",len(sel),"ligands")
+        if not silent and (t%print_freq==0): print("Try",t,"picked",len(sel),"ligands")
         if len(sel)>len(final_sel):
             final_sel=sel
     return final_sel
