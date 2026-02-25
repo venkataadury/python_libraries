@@ -2,12 +2,59 @@
 import os,sys
 import numpy as np
 
+class DegenerateValues:
+    def __init__(self,v,tol=None,use_ratio=False):
+        self.rat=use_ratio
+        if tol is None:
+            if self.rat: tol=1.01
+            else: tol=0.001
+        self.tol=tol
+        self.raw_data=v
+        self._evaluate()
+    
+    def _evaluate(self):
+        self.argument=dict()
+        self.values=dict()
+        
+        taken=np.zeros_like(self.raw_data).astype(bool)
+        while not np.all(taken):
+            knew_idx=np.where(~taken)[0][0]
+            self.values[self.raw_data[knew_idx]]=[self.raw_data[knew_idx]]
+            self.argument[self.raw_data[knew_idx]]=[knew_idx]
+            taken[knew_idx]=True
+            no_change=False
+            
+            while not no_change:
+                #print("\tLLoop")
+                no_change=True
+                for idx in np.where(~taken)[0]:
+                    #print("\t\t",idx)
+                    for k in self.values:
+                        
+                        for el in self.values[k]:
+                            if self.check(el,self.raw_data[idx]):
+                                no_change=False
+                                self.argument[k].append(idx)
+                                self.values[k].append(self.raw_data[idx])
+                                taken[idx]=True
+                                break
+                
+    
+    def check(self,v1,v2):
+        tol=self.tol
+        if self.rat:
+            return ((np.abs(v1/v2)<tol and np.abs(v1/v2)>1) or (np.abs(v2/v1)<tol and np.abs(v2/v1)>1))
+        else: return np.abs(v1-v2)<tol
+                            
+                
+            
+
 class SingleVariableFunction:
     def __init__(self, fx, x_domain=None, analytical_derivative=None, hard_domain=True):
         self.fx=fx
         self.domain=(-np.inf,np.inf) if x_domain is None else (float(x_domain[0]), float(x_domain[1]))
         self.enforce_domain=hard_domain
-        _,_,exin=self._practical_domain(16)
+        _,_,exin=self.practical_domain(16)
         try: res=self.fx(exin).squeeze()
         except: raise ValueError("Function failed to operate on a numpy array of size "+str(len(exin)))
         if len(res)!=len(exin): raise ValueError("Function operating on a list of inputs should give output of same size. Here "+str(len(exin))+" -> "+str(len(res)))
@@ -20,7 +67,7 @@ class SingleVariableFunction:
 
 
     def _direct_call(self,x): return self.fx(x)
-    def _practical_domain(self, n_points, x_max=None, x_min=None, buffer=0):
+    def practical_domain(self, n_points, x_max=None, x_min=None, buffer=0):
         if x_max is None:
             if x_min is not None: x_max=(-x_min if x_min<0 else x_min+1)
             else: x_max=1.0
@@ -100,13 +147,3 @@ class SingleVariableFunction:
             converged[filt]=convchk
             x_ret[filt]=xchk
         return x_ret
-
-def f(x):
-    return ((x-2)**2)*((x-4)**2)*3.0
-
-svf=SingleVariableFunction(f,x_domain=(1.5,5.5),hard_domain=True)
-_,_,x_starts=svf._practical_domain(25,buffer=0.2)
-print("Chosen domain points: ",np.round(x_starts,2))
-
-x_minima=svf.gradientDescent(x_starts, tol=1e-6)
-print("Minimas now at:",np.round(x_minima,2))
